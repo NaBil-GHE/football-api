@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import dashboardRouter from '../modules/dashboard/dashboard.routes';
 import leagueRouter from '../modules/leagues/league.routes';
 import matchRouter from '../modules/matches/match.routes';
 import teamRouter from '../modules/teams/team.routes';
@@ -10,5 +11,6 @@ apiRouter.use('/health', healthRouter);
 apiRouter.use('/teams', teamRouter);
 apiRouter.use('/leagues', leagueRouter);
 apiRouter.use('/matches', matchRouter);
+apiRouter.use('/dashboard', dashboardRouter);
 
 export default apiRouter;
