@@ -3,6 +3,7 @@ import { after, before, beforeEach, describe, it } from 'node:test';
 import app from '../src/app';
 import {
   clearTestDb,
+  createTestAdminHeaders,
   setupTestDb,
   startTestServer,
   teardownTestDb,
@@ -11,6 +12,7 @@ import {
 describe('Phase 5 — Matches Module', () => {
   let baseUrl = '';
   let closeServer: () => Promise<void>;
+  let headers: Record<string, string> = {};
 
   before(async () => {
     await setupTestDb();
@@ -21,6 +23,7 @@ describe('Phase 5 — Matches Module', () => {
 
   beforeEach(async () => {
     await clearTestDb();
+    headers = await createTestAdminHeaders();
   });
 
   after(async () => {
@@ -32,7 +35,7 @@ describe('Phase 5 — Matches Module', () => {
     const create = async (path: string, payload: unknown) => {
       const res = await fetch(`${baseUrl}${path}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
       });
       const body = (await res.json()) as { data: { _id: string } };
@@ -69,7 +72,7 @@ describe('Phase 5 — Matches Module', () => {
 
     const sameTeamRes = await fetch(`${baseUrl}/api/matches`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         league: leagueId,
         season: seasonId,
@@ -82,7 +85,7 @@ describe('Phase 5 — Matches Module', () => {
 
     const missingTeamRes = await fetch(`${baseUrl}/api/matches`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         league: leagueId,
         season: seasonId,
@@ -101,7 +104,7 @@ describe('Phase 5 — Matches Module', () => {
     const createMatch = async (overrides: Record<string, unknown>) => {
       const res = await fetch(`${baseUrl}/api/matches`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           league: leagueId,
           season: seasonId,
@@ -162,10 +165,9 @@ describe('Phase 5 — Matches Module', () => {
     assert.equal(finished.pagination.total, 1);
     assert.equal(teamMatches.pagination.total, 3);
 
-    // Update & Delete
     const patchRes = await fetch(`${baseUrl}/api/matches/${liveMatch.data._id}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ minute: 42 }),
     });
     assert.equal(patchRes.status, 200);
@@ -174,7 +176,7 @@ describe('Phase 5 — Matches Module', () => {
 
     const deleteRes = await fetch(
       `${baseUrl}/api/matches/${liveMatch.data._id}`,
-      { method: 'DELETE' },
+      { method: 'DELETE', headers },
     );
     assert.equal(deleteRes.status, 200);
   });

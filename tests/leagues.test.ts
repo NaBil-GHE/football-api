@@ -3,6 +3,7 @@ import { after, before, beforeEach, describe, it } from 'node:test';
 import app from '../src/app';
 import {
   clearTestDb,
+  createTestAdminHeaders,
   setupTestDb,
   startTestServer,
   teardownTestDb,
@@ -11,6 +12,7 @@ import {
 describe('Phase 4 — Leagues & Seasons Module', () => {
   let baseUrl = '';
   let closeServer: () => Promise<void>;
+  let headers: Record<string, string> = {};
 
   before(async () => {
     await setupTestDb();
@@ -21,6 +23,7 @@ describe('Phase 4 — Leagues & Seasons Module', () => {
 
   beforeEach(async () => {
     await clearTestDb();
+    headers = await createTestAdminHeaders();
   });
 
   after(async () => {
@@ -31,7 +34,7 @@ describe('Phase 4 — Leagues & Seasons Module', () => {
   it('creates, reads, updates, and manages seasons for a league', async () => {
     const createRes = await fetch(`${baseUrl}/api/leagues`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         name: 'Premier League',
         country: 'England',
@@ -47,10 +50,9 @@ describe('Phase 4 — Leagues & Seasons Module', () => {
     assert.equal(createRes.status, 201);
     const leagueId = created.data._id;
 
-    // Duplicate league prevented
     const dupRes = await fetch(`${baseUrl}/api/leagues`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         name: 'premier league',
         country: 'england',
@@ -59,10 +61,9 @@ describe('Phase 4 — Leagues & Seasons Module', () => {
     });
     assert.equal(dupRes.status, 409);
 
-    // Create first season (current = true)
     const s1Res = await fetch(`${baseUrl}/api/leagues/${leagueId}/seasons`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         name: '2024/2025',
         startDate: '2024-08-15T00:00:00.000Z',
@@ -73,10 +74,9 @@ describe('Phase 4 — Leagues & Seasons Module', () => {
     assert.equal(s1Res.status, 201);
     const s1 = (await s1Res.json()) as { data: { _id: string } };
 
-    // Create second season (current = true) should unset first season's current flag
     const s2Res = await fetch(`${baseUrl}/api/leagues/${leagueId}/seasons`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         name: '2025/2026',
         startDate: '2025-08-15T00:00:00.000Z',
@@ -87,10 +87,9 @@ describe('Phase 4 — Leagues & Seasons Module', () => {
     assert.equal(s2Res.status, 201);
     const s2 = (await s2Res.json()) as { data: { _id: string } };
 
-    // Duplicate season rejected
     const dupSeasonRes = await fetch(`${baseUrl}/api/leagues/${leagueId}/seasons`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         name: '2025/2026',
         startDate: '2025-08-15T00:00:00.000Z',
@@ -99,10 +98,9 @@ describe('Phase 4 — Leagues & Seasons Module', () => {
     });
     assert.equal(dupSeasonRes.status, 409);
 
-    // Invalid date range rejected
     const badDateRes = await fetch(`${baseUrl}/api/leagues/${leagueId}/seasons`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         name: '2026/2027',
         startDate: '2027-05-25T00:00:00.000Z',
@@ -111,7 +109,6 @@ describe('Phase 4 — Leagues & Seasons Module', () => {
     });
     assert.equal(badDateRes.status, 400);
 
-    // List seasons verifies only 2025/2026 is current
     const seasonsRes = await fetch(`${baseUrl}/api/leagues/${leagueId}/seasons`);
     const seasonsBody = (await seasonsRes.json()) as {
       data: Array<{ name: string; current: boolean }>;
@@ -122,22 +119,24 @@ describe('Phase 4 — Leagues & Seasons Module', () => {
     assert.equal(currentSeasons.length, 1);
     assert.equal(currentSeasons[0]?.name, '2025/2026');
 
-    // Cannot delete league while seasons exist
     const blockedDeleteRes = await fetch(`${baseUrl}/api/leagues/${leagueId}`, {
       method: 'DELETE',
+      headers,
     });
     assert.equal(blockedDeleteRes.status, 409);
 
-    // Delete seasons then delete league
     await fetch(`${baseUrl}/api/leagues/${leagueId}/seasons/${s1.data._id}`, {
       method: 'DELETE',
+      headers,
     });
     await fetch(`${baseUrl}/api/leagues/${leagueId}/seasons/${s2.data._id}`, {
       method: 'DELETE',
+      headers,
     });
 
     const deleteRes = await fetch(`${baseUrl}/api/leagues/${leagueId}`, {
       method: 'DELETE',
+      headers,
     });
     assert.equal(deleteRes.status, 200);
   });
@@ -151,7 +150,7 @@ describe('Phase 4 — Leagues & Seasons Module', () => {
     for (const league of leagues) {
       await fetch(`${baseUrl}/api/leagues`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(league),
       });
     }

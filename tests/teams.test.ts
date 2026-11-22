@@ -3,6 +3,7 @@ import { after, before, beforeEach, describe, it } from 'node:test';
 import app from '../src/app';
 import {
   clearTestDb,
+  createTestAdminHeaders,
   setupTestDb,
   startTestServer,
   teardownTestDb,
@@ -11,6 +12,7 @@ import {
 describe('Phase 3 — Teams Module', () => {
   let baseUrl = '';
   let closeServer: () => Promise<void>;
+  let headers: Record<string, string> = {};
 
   before(async () => {
     await setupTestDb();
@@ -21,6 +23,7 @@ describe('Phase 3 — Teams Module', () => {
 
   beforeEach(async () => {
     await clearTestDb();
+    headers = await createTestAdminHeaders();
   });
 
   after(async () => {
@@ -31,7 +34,7 @@ describe('Phase 3 — Teams Module', () => {
   it('creates, fetches, updates, and deletes a team', async () => {
     const createRes = await fetch(`${baseUrl}/api/teams`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         name: 'Real Madrid',
         shortName: 'rma',
@@ -66,7 +69,7 @@ describe('Phase 3 — Teams Module', () => {
 
     const patchRes = await fetch(`${baseUrl}/api/teams/${teamId}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ stadium: 'Bernabeu Renovated' }),
     });
     const updated = (await patchRes.json()) as {
@@ -78,6 +81,7 @@ describe('Phase 3 — Teams Module', () => {
 
     const deleteRes = await fetch(`${baseUrl}/api/teams/${teamId}`, {
       method: 'DELETE',
+      headers,
     });
     assert.equal(deleteRes.status, 200);
 
@@ -88,7 +92,7 @@ describe('Phase 3 — Teams Module', () => {
   it('prevents duplicate teams in the same country (case-insensitive)', async () => {
     await fetch(`${baseUrl}/api/teams`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         name: 'Barcelona',
         shortName: 'FCB',
@@ -98,7 +102,7 @@ describe('Phase 3 — Teams Module', () => {
 
     const dupRes = await fetch(`${baseUrl}/api/teams`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         name: 'barcelona',
         shortName: 'BAR',
@@ -124,7 +128,7 @@ describe('Phase 3 — Teams Module', () => {
     for (const team of teams) {
       await fetch(`${baseUrl}/api/teams`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(team),
       });
     }
@@ -163,7 +167,7 @@ describe('Phase 3 — Teams Module', () => {
 
     const badPayloadRes = await fetch(`${baseUrl}/api/teams`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ name: 'A', shortName: 'X' }),
     });
     const badPayloadBody = (await badPayloadRes.json()) as {

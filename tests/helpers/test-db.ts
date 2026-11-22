@@ -1,11 +1,18 @@
 import type { AddressInfo } from 'node:net';
+import bcrypt from 'bcryptjs';
 import type { Express } from 'express';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import mongoose from 'mongoose';
+import { signAccessToken } from '../../src/modules/auth/auth.service';
+import { UserModel } from '../../src/modules/auth/user.model';
 
 let replSet: MongoMemoryReplSet | null = null;
 
 export async function setupTestDb(): Promise<string> {
+  if (!process.env.JWT_SECRET) {
+    process.env.JWT_SECRET = 'test-only-jwt-secret-key-min-32-chars';
+  }
+
   if (process.env.TEST_MONGODB_URI) {
     process.env.MONGODB_URI = process.env.TEST_MONGODB_URI;
     if (mongoose.connection.readyState === 0) {
@@ -28,6 +35,22 @@ export async function setupTestDb(): Promise<string> {
   }
 
   return uri;
+}
+
+export async function createTestAdminHeaders(): Promise<Record<string, string>> {
+  const passwordHash = await bcrypt.hash('TestAdmin123!', 4);
+  const admin = await UserModel.create({
+    name: 'Test Admin',
+    email: `admin-${Date.now()}-${Math.random().toString(36).slice(2)}@test.local`,
+    passwordHash,
+    role: 'admin',
+  });
+
+  const token = signAccessToken(admin);
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${token}`,
+  };
 }
 
 export async function clearTestDb(): Promise<void> {

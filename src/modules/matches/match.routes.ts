@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { authenticate, requireAdmin } from '../../middleware/auth.middleware';
 import matchEventRouter from '../match-events/match-event.routes';
 import {
   cancelMatchController,
@@ -29,20 +30,56 @@ matchRouter.get('/live', listLiveMatchesController);
 matchRouter.get('/finished', listFinishedMatchesController);
 matchRouter.get('/team/:teamId', listTeamMatchesController);
 
-matchRouter.post('/', createMatchController);
 matchRouter.get('/', listMatchesController);
 matchRouter.get('/:id', getMatchByIdController);
-matchRouter.patch('/:id', updateMatchController);
-matchRouter.delete('/:id', deleteMatchController);
 
-matchRouter.post('/:id/start', startMatchController);
-matchRouter.post('/:id/halftime', halftimeMatchController);
-matchRouter.post('/:id/resume', resumeMatchController);
-matchRouter.post('/:id/finish', finishMatchController);
-matchRouter.post('/:id/postpone', postponeMatchController);
-matchRouter.post('/:id/cancel', cancelMatchController);
-matchRouter.patch('/:id/minute', updateMatchMinuteController);
-matchRouter.patch('/:id/score', updateMatchScoreController);
+matchRouter.post('/', authenticate, requireAdmin, createMatchController);
+matchRouter.patch('/:id', authenticate, requireAdmin, updateMatchController);
+matchRouter.delete('/:id', authenticate, requireAdmin, deleteMatchController);
+
+matchRouter.post('/:id/start', authenticate, requireAdmin, startMatchController);
+matchRouter.post(
+  '/:id/halftime',
+  authenticate,
+  requireAdmin,
+  halftimeMatchController,
+);
+matchRouter.post(
+  '/:id/resume',
+  authenticate,
+  requireAdmin,
+  resumeMatchController,
+);
+matchRouter.post(
+  '/:id/finish',
+  authenticate,
+  requireAdmin,
+  finishMatchController,
+);
+matchRouter.post(
+  '/:id/postpone',
+  authenticate,
+  requireAdmin,
+  postponeMatchController,
+);
+matchRouter.post(
+  '/:id/cancel',
+  authenticate,
+  requireAdmin,
+  cancelMatchController,
+);
+matchRouter.patch(
+  '/:id/minute',
+  authenticate,
+  requireAdmin,
+  updateMatchMinuteController,
+);
+matchRouter.patch(
+  '/:id/score',
+  authenticate,
+  requireAdmin,
+  updateMatchScoreController,
+);
 
 matchRouter.use('/:id/events', matchEventRouter);
 

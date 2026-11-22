@@ -3,6 +3,7 @@ import { after, before, beforeEach, describe, it } from 'node:test';
 import app from '../src/app';
 import {
   clearTestDb,
+  createTestAdminHeaders,
   setupTestDb,
   startTestServer,
   teardownTestDb,
@@ -11,6 +12,7 @@ import {
 describe('Phase 6 — Match Events Module', () => {
   let baseUrl = '';
   let closeServer: () => Promise<void>;
+  let headers: Record<string, string> = {};
 
   before(async () => {
     await setupTestDb();
@@ -21,6 +23,7 @@ describe('Phase 6 — Match Events Module', () => {
 
   beforeEach(async () => {
     await clearTestDb();
+    headers = await createTestAdminHeaders();
   });
 
   after(async () => {
@@ -32,7 +35,7 @@ describe('Phase 6 — Match Events Module', () => {
     const post = async (path: string, payload: unknown) => {
       const res = await fetch(`${baseUrl}${path}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
       });
       return (await res.json()) as { data: { _id: string } };
@@ -84,10 +87,9 @@ describe('Phase 6 — Match Events Module', () => {
   it('tracks goals, penalties, own goals, and non-goal events with accurate score calculation', async () => {
     const { matchId, homeTeamId, awayTeamId, thirdTeamId } = await seedMatch();
 
-    // Reject team not in match
     const badTeamRes = await fetch(`${baseUrl}/api/matches/${matchId}/events`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         team: thirdTeamId,
         type: 'goal',
@@ -97,10 +99,9 @@ describe('Phase 6 — Match Events Module', () => {
     });
     assert.equal(badTeamRes.status, 400);
 
-    // 1) Home goal at 45+2 -> 1-0
     const goal1Res = await fetch(`${baseUrl}/api/matches/${matchId}/events`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         team: homeTeamId,
         type: 'goal',
@@ -116,10 +117,9 @@ describe('Phase 6 — Match Events Module', () => {
     assert.equal(goal1Res.status, 201);
     assert.deepEqual(goal1.score, { homeScore: 1, awayScore: 0 });
 
-    // 2) Away penalty at 15 -> 1-1
     const penRes = await fetch(`${baseUrl}/api/matches/${matchId}/events`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         team: awayTeamId,
         type: 'penalty',
@@ -134,10 +134,9 @@ describe('Phase 6 — Match Events Module', () => {
     assert.equal(penRes.status, 201);
     assert.deepEqual(pen.score, { homeScore: 1, awayScore: 1 });
 
-    // 3) Home own_goal at 60 -> awards goal to away team -> 1-2
     const ogRes = await fetch(`${baseUrl}/api/matches/${matchId}/events`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         team: homeTeamId,
         type: 'own_goal',
@@ -152,10 +151,9 @@ describe('Phase 6 — Match Events Module', () => {
     assert.equal(ogRes.status, 201);
     assert.deepEqual(og.score, { homeScore: 1, awayScore: 2 });
 
-    // 4) Yellow card & substitution do NOT change score
     const ycRes = await fetch(`${baseUrl}/api/matches/${matchId}/events`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         team: awayTeamId,
         type: 'yellow_card',
@@ -172,7 +170,7 @@ describe('Phase 6 — Match Events Module', () => {
 
     const subRes = await fetch(`${baseUrl}/api/matches/${matchId}/events`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         team: homeTeamId,
         type: 'substitution',
@@ -183,7 +181,6 @@ describe('Phase 6 — Match Events Module', () => {
     });
     assert.equal(subRes.status, 201);
 
-    // List events ordered by minute + addedTime: 15, 45+1, 45+2, 60, 70
     const listRes = await fetch(`${baseUrl}/api/matches/${matchId}/events`);
     const listBody = (await listRes.json()) as {
       data: Array<{ minute: number; addedTime: number }>;
@@ -194,12 +191,11 @@ describe('Phase 6 — Match Events Module', () => {
       ['15+0', '45+1', '45+2', '60+0', '70+0'],
     );
 
-    // Update own_goal to VAR (disallowed) -> score reverts to 1-1
     const patchRes = await fetch(
       `${baseUrl}/api/matches/${matchId}/events/${og.data._id}`,
       {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ type: 'var', description: 'Goal disallowed by VAR' }),
       },
     );
@@ -209,10 +205,9 @@ describe('Phase 6 — Match Events Module', () => {
     assert.equal(patchRes.status, 200);
     assert.deepEqual(patched.score, { homeScore: 1, awayScore: 1 });
 
-    // Delete penalty event -> score becomes 1-0
     const delRes = await fetch(
       `${baseUrl}/api/matches/${matchId}/events/${pen.data._id}`,
-      { method: 'DELETE' },
+      { method: 'DELETE', headers },
     );
     const deleted = (await delRes.json()) as {
       score: { homeScore: number; awayScore: number };

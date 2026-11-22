@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { authenticate, requireAdmin } from '../../middleware/auth.middleware';
 import {
   createTeamController,
   deleteTeamController,
@@ -9,10 +10,11 @@ import {
 
 const teamRouter = Router();
 
-teamRouter.post('/', createTeamController);
 teamRouter.get('/', listTeamsController);
 teamRouter.get('/:id', getTeamByIdController);
-teamRouter.patch('/:id', updateTeamController);
-teamRouter.delete('/:id', deleteTeamController);
+
+teamRouter.post('/', authenticate, requireAdmin, createTeamController);
+teamRouter.patch('/:id', authenticate, requireAdmin, updateTeamController);
+teamRouter.delete('/:id', authenticate, requireAdmin, deleteTeamController);
 
 export default teamRouter;

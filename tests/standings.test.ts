@@ -3,6 +3,7 @@ import { after, before, beforeEach, describe, it } from 'node:test';
 import app from '../src/app';
 import {
   clearTestDb,
+  createTestAdminHeaders,
   setupTestDb,
   startTestServer,
   teardownTestDb,
@@ -11,6 +12,7 @@ import {
 describe('Phase 8 — Standings Module', () => {
   let baseUrl = '';
   let closeServer: () => Promise<void>;
+  let headers: Record<string, string> = {};
 
   before(async () => {
     await setupTestDb();
@@ -21,6 +23,7 @@ describe('Phase 8 — Standings Module', () => {
 
   beforeEach(async () => {
     await clearTestDb();
+    headers = await createTestAdminHeaders();
   });
 
   after(async () => {
@@ -32,7 +35,7 @@ describe('Phase 8 — Standings Module', () => {
     const post = async (path: string, payload: unknown) => {
       const res = await fetch(`${baseUrl}${path}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
       });
       return (await res.json()) as { data: { _id: string } };
@@ -56,7 +59,6 @@ describe('Phase 8 — Standings Module', () => {
 
     const kickoff = new Date().toISOString();
 
-    // Match 1 (finished): Alpha 3 - 1 Beta -> Alpha 3pts (+2 GD, 3 GF), Beta 0pts (-2 GD)
     await post('/api/matches', {
       league: league.data._id,
       season: season.data._id,
@@ -69,8 +71,6 @@ describe('Phase 8 — Standings Module', () => {
       minute: 90,
     });
 
-    // Match 2 (finished): Gamma 2 - 0 Beta -> Gamma 3pts (+2 GD, 2 GF)
-    // Alpha & Gamma both 3pts and +2 GD, Alpha ranks #1 due to higher GF (3 > 2)
     await post('/api/matches', {
       league: league.data._id,
       season: season.data._id,
@@ -83,7 +83,6 @@ describe('Phase 8 — Standings Module', () => {
       minute: 90,
     });
 
-    // Match 3 (live - must NOT be counted!)
     await post('/api/matches', {
       league: league.data._id,
       season: season.data._id,

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { authenticate, requireAdmin } from '../../middleware/auth.middleware';
 import {
   createMatchEventController,
   deleteMatchEventController,
@@ -9,10 +10,21 @@ import {
 
 const matchEventRouter = Router({ mergeParams: true });
 
-matchEventRouter.post('/', createMatchEventController);
 matchEventRouter.get('/', listMatchEventsController);
 matchEventRouter.get('/:eventId', getMatchEventByIdController);
-matchEventRouter.patch('/:eventId', updateMatchEventController);
-matchEventRouter.delete('/:eventId', deleteMatchEventController);
+
+matchEventRouter.post('/', authenticate, requireAdmin, createMatchEventController);
+matchEventRouter.patch(
+  '/:eventId',
+  authenticate,
+  requireAdmin,
+  updateMatchEventController,
+);
+matchEventRouter.delete(
+  '/:eventId',
+  authenticate,
+  requireAdmin,
+  deleteMatchEventController,
+);
 
 export default matchEventRouter;
