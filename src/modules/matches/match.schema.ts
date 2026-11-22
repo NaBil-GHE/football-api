@@ -53,6 +53,22 @@ export const listMatchesQuerySchema = paginationQuerySchema.extend({
   to: isoDateSchema.optional(),
 });
 
+export const postponeMatchSchema = z.object({
+  kickoff: isoDateSchema.optional(),
+});
+
+export const updateMatchMinuteSchema = z.object({
+  minute: z.coerce.number().int().min(0).max(150),
+});
+
+export const updateMatchScoreSchema = z.object({
+  homeScore: z.coerce.number().int().min(0),
+  awayScore: z.coerce.number().int().min(0),
+});
+
 export type CreateMatchInput = z.infer<typeof createMatchSchema>;
 export type UpdateMatchInput = z.infer<typeof updateMatchSchema>;
 export type ListMatchesQuery = z.infer<typeof listMatchesQuerySchema>;
+export type PostponeMatchInput = z.infer<typeof postponeMatchSchema>;
+export type UpdateMatchMinuteInput = z.infer<typeof updateMatchMinuteSchema>;
+export type UpdateMatchScoreInput = z.infer<typeof updateMatchScoreSchema>;

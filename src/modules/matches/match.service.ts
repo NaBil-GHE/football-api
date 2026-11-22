@@ -9,6 +9,7 @@ import { assertValidObjectId } from '../../utils/validation';
 import { LeagueModel } from '../leagues/league.model';
 import { SeasonModel } from '../leagues/season.model';
 import { TeamModel } from '../teams/team.model';
+import { assertValidStatusTransition } from './match-lifecycle.service';
 import { MatchModel, type MatchDocument } from './match.model';
 import type {
   CreateMatchInput,
@@ -23,7 +24,7 @@ const ALLOWED_MATCH_SORT_FIELDS = [
   'createdAt',
 ] as const;
 
-const MATCH_POPULATE = [
+export const MATCH_POPULATE = [
   { path: 'league', select: 'name country logo type' },
   { path: 'season', select: 'name startDate endDate current' },
   { path: 'homeTeam', select: 'name shortName country logo' },
@@ -255,6 +256,10 @@ export async function updateMatch(
       homeTeamId: nextHomeTeam,
       awayTeamId: nextAwayTeam,
     });
+  }
+
+  if (input.status !== undefined) {
+    assertValidStatusTransition(existing.status, input.status);
   }
 
   const updated = await MatchModel.findByIdAndUpdate(

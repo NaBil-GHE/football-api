@@ -3,8 +3,12 @@ import { parseSchema } from '../../utils/validation';
 import {
   createMatchSchema,
   listMatchesQuerySchema,
+  postponeMatchSchema,
+  updateMatchMinuteSchema,
   updateMatchSchema,
+  updateMatchScoreSchema,
 } from './match.schema';
+import * as matchLifecycleService from './match-lifecycle.service';
 import * as matchService from './match.service';
 
 export async function createMatchController(
@@ -183,6 +187,123 @@ export async function deleteMatchController(
       success: true,
       message: 'Match deleted successfully',
     });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function startMatchController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const match = await matchLifecycleService.startMatch(String(req.params.id));
+    res.status(200).json({ success: true, data: match });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function halftimeMatchController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const match = await matchLifecycleService.setHalftime(String(req.params.id));
+    res.status(200).json({ success: true, data: match });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function resumeMatchController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const match = await matchLifecycleService.resumeMatch(String(req.params.id));
+    res.status(200).json({ success: true, data: match });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function finishMatchController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const match = await matchLifecycleService.finishMatch(String(req.params.id));
+    res.status(200).json({ success: true, data: match });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function postponeMatchController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const input = parseSchema(postponeMatchSchema, req.body ?? {});
+    const match = await matchLifecycleService.postponeMatch(
+      String(req.params.id),
+      input.kickoff,
+    );
+    res.status(200).json({ success: true, data: match });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function cancelMatchController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const match = await matchLifecycleService.cancelMatch(String(req.params.id));
+    res.status(200).json({ success: true, data: match });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updateMatchMinuteController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const input = parseSchema(updateMatchMinuteSchema, req.body);
+    const match = await matchLifecycleService.updateMatchMinute(
+      String(req.params.id),
+      input.minute,
+    );
+    res.status(200).json({ success: true, data: match });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updateMatchScoreController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const input = parseSchema(updateMatchScoreSchema, req.body);
+    const match = await matchLifecycleService.updateMatchScore(
+      String(req.params.id),
+      input.homeScore,
+      input.awayScore,
+    );
+    res.status(200).json({ success: true, data: match });
   } catch (error) {
     next(error);
   }
