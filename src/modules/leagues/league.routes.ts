@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { getLeagueStandingsController } from '../standings/standings.controller';
 import {
   createLeagueController,
   createSeasonController,
@@ -23,5 +24,7 @@ leagueRouter.post('/:id/seasons', createSeasonController);
 leagueRouter.get('/:id/seasons', listSeasonsByLeagueController);
 leagueRouter.patch('/:id/seasons/:seasonId', updateSeasonController);
 leagueRouter.delete('/:id/seasons/:seasonId', deleteSeasonController);
+
+leagueRouter.get('/:id/standings', getLeagueStandingsController);
 
 export default leagueRouter;
