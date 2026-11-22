@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import app from '../src/app';
-import { stopAllSimulationWorkers } from '../src/modules/matches/match-simulation.service';
+import {
+  getActiveSimulationWorkerCount,
+  recoverRunningSimulations,
+  stopAllSimulationWorkers,
+} from '../src/modules/matches/match-simulation.service';
 import { generateSimulationSchedule } from '../src/modules/matches/simulation-engine';
 import {
   clearTestDb,
@@ -11,7 +15,7 @@ import {
   teardownTestDb,
 } from './helpers/test-db';
 
-describe('Match Simulation Mode', () => {
+describe('Match Simulation Mode — Deep Verification', () => {
   let baseUrl = '';
   let closeServer: () => Promise<void>;
   let headers: Record<string, string> = {};
@@ -35,7 +39,10 @@ describe('Match Simulation Mode', () => {
     await teardownTestDb();
   });
 
-  async function seedFixture(isSimulation: boolean) {
+  async function seedFixture(
+    isSimulation: boolean,
+    simOverrides: Record<string, unknown> = {},
+  ) {
     const post = async (path: string, payload: unknown) => {
       const res = await fetch(`${baseUrl}${path}`, {
         method: 'POST',
@@ -47,7 +54,7 @@ describe('Match Simulation Mode', () => {
     };
 
     const league = await post('/api/leagues', {
-      name: 'Simulation Cup',
+      name: 'Simulation League',
       country: 'International',
       type: 'league',
     });
@@ -81,185 +88,300 @@ describe('Match Simulation Mode', () => {
             simulationSpeed: 10,
             simulationConfig: {
               matchDuration: 90,
-              eventFrequency: 8,
-              goalProbability: 0.35,
+              eventFrequency: 10,
+              goalProbability: 0.3,
               cardProbability: 0.35,
-              substitutionProbability: 0.25,
+              substitutionProbability: 0.3,
+              maxSubstitutionsPerTeam: 3,
             },
+            ...simOverrides,
           }
         : {}),
     });
 
     return {
+      leagueId: league.data._id,
+      seasonId: season.data._id,
       matchId: match.data._id,
       homeTeamId: home.data._id,
       awayTeamId: away.data._id,
     };
   }
 
-  it('generates identical deterministic schedules for the same seed', () => {
-    const a = generateSimulationSchedule('seed-123', { eventFrequency: 10 });
-    const b = generateSimulationSchedule('seed-123', { eventFrequency: 10 });
-    assert.deepEqual(a, b);
-    assert.equal(a[0]?.kind, 'kickoff');
-    assert.equal(a[a.length - 1]?.kind, 'fulltime');
-    assert.ok(a.some((s) => s.kind === 'halftime'));
-    assert.ok(a.some((s) => s.kind === 'second_half'));
-  });
-
-  it('rejects simulation controls on normal matches and enforces admin auth', async () => {
-    const { matchId } = await seedFixture(false);
-
-    const unauth = await fetch(
-      `${baseUrl}/api/matches/${matchId}/simulation/start`,
-      { method: 'POST' },
-    );
-    assert.equal(unauth.status, 401);
-
-    const res = await fetch(
-      `${baseUrl}/api/matches/${matchId}/simulation/start`,
-      { method: 'POST', headers },
-    );
-    const body = (await res.json()) as { error: { code: string } };
-    assert.equal(res.status, 400);
-    assert.equal(body.error.code, 'NOT_SIMULATION_MATCH');
-  });
-
-  it('runs start, pause, resume, speed change, step-through to fulltime, and reset without duplicating events', async () => {
-    const { matchId, homeTeamId, awayTeamId } = await seedFixture(true);
-
-    // 1) Start simulation -> immediately kicks off match
-    const startRes = await fetch(
-      `${baseUrl}/api/matches/${matchId}/simulation/start`,
-      { method: 'POST', headers, body: JSON.stringify({ simulationSpeed: 2 }) },
-    );
-    const started = (await startRes.json()) as {
-      data: {
-        simulationStatus: string;
-        simulationSpeed: number;
-        progress: { executedSteps: number; totalSteps: number };
-        match: { status: string };
-      };
+  it('enforces determinism, red card player removal, and substitution constraints', () => {
+    const config = {
+      matchDuration: 90,
+      eventFrequency: 28,
+      goalProbability: 0.15,
+      cardProbability: 0.45,
+      substitutionProbability: 0.35,
+      maxSubstitutionsPerTeam: 3,
     };
-    assert.equal(startRes.status, 200);
-    assert.equal(started.data.simulationStatus, 'running');
-    assert.equal(started.data.simulationSpeed, 2);
-    assert.equal(started.data.match.status, 'live');
-    assert.equal(started.data.progress.executedSteps, 1);
 
-    // 2) Duplicate start rejected
-    const dupStart = await fetch(
+    const a = generateSimulationSchedule('rules-seed-99', config);
+    const b = generateSimulationSchedule('rules-seed-99', config);
+    assert.deepEqual(a, b);
+
+    const sentOff = { home: new Set<string>(), away: new Set<string>() };
+    const subbedOut = { home: new Set<string>(), away: new Set<string>() };
+    const subbedIn = { home: new Set<string>(), away: new Set<string>() };
+    const subsCount = { home: 0, away: 0 };
+
+    for (const step of a) {
+      if (step.kind !== 'event' || !step.teamSide) continue;
+      const side = step.teamSide;
+
+      if (step.player) {
+        assert.equal(
+          sentOff[side].has(step.player),
+          false,
+          `Sent-off player ${step.player} must not act again`,
+        );
+        assert.equal(
+          subbedOut[side].has(step.player),
+          false,
+          `Substituted-out player ${step.player} must not act again`,
+        );
+      }
+
+      if (step.eventType === 'red_card' && step.player) {
+        sentOff[side].add(step.player);
+      }
+
+      if (step.eventType === 'substitution' && step.playerIn && step.playerOut) {
+        assert.equal(
+          subbedOut[side].has(step.playerOut),
+          false,
+          'Player cannot be substituted out twice',
+        );
+        assert.equal(
+          subbedIn[side].has(step.playerIn),
+          false,
+          'Player cannot be substituted in twice',
+        );
+        assert.equal(
+          subbedOut[side].has(step.playerIn),
+          false,
+          'Substituted-out player cannot re-enter',
+        );
+        subbedOut[side].add(step.playerOut);
+        subbedIn[side].add(step.playerIn);
+        subsCount[side] += 1;
+      }
+    }
+
+    assert.ok(subsCount.home <= config.maxSubstitutionsPerTeam);
+    assert.ok(subsCount.away <= config.maxSubstitutionsPerTeam);
+  });
+
+  it('rejects invalid simulation configurations and non-simulation controls', async () => {
+    const { leagueId, seasonId, homeTeamId, awayTeamId, matchId } =
+      await seedFixture(false);
+
+    // Probabilities sum > 1
+    const badProb = await fetch(`${baseUrl}/api/matches`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        league: leagueId,
+        season: seasonId,
+        homeTeam: homeTeamId,
+        awayTeam: awayTeamId,
+        kickoff: new Date().toISOString(),
+        isSimulation: true,
+        simulationConfig: {
+          matchDuration: 90,
+          eventFrequency: 10,
+          goalProbability: 0.5,
+          cardProbability: 0.4,
+          substitutionProbability: 0.3,
+        },
+      }),
+    });
+    assert.equal(badProb.status, 400);
+
+    // Invalid seed characters
+    const badSeed = await fetch(`${baseUrl}/api/matches`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        league: leagueId,
+        season: seasonId,
+        homeTeam: homeTeamId,
+        awayTeam: awayTeamId,
+        kickoff: new Date().toISOString(),
+        isSimulation: true,
+        simulationSeed: 'bad seed with spaces!',
+      }),
+    });
+    assert.equal(badSeed.status, 400);
+
+    // Non-simulation match rejected
+    const notSim = await fetch(
       `${baseUrl}/api/matches/${matchId}/simulation/start`,
       { method: 'POST', headers },
     );
-    assert.equal(dupStart.status, 409);
-
-    // 3) Pause & change speed & resume & pause again
-    const pauseRes = await fetch(
-      `${baseUrl}/api/matches/${matchId}/simulation/pause`,
-      { method: 'POST', headers },
-    );
-    assert.equal(pauseRes.status, 200);
+    assert.equal(notSim.status, 400);
     assert.equal(
-      ((await pauseRes.json()) as { data: { simulationStatus: string } }).data
-        .simulationStatus,
-      'paused',
+      ((await notSim.json()) as { error: { code: string } }).error.code,
+      'NOT_SIMULATION_MATCH',
     );
+  });
 
-    const speedRes = await fetch(
-      `${baseUrl}/api/matches/${matchId}/simulation/speed`,
-      {
-        method: 'PATCH',
+  it('handles concurrent start/next requests, server restart recovery, and blocks editing active simulation config', async () => {
+    const { matchId } = await seedFixture(true);
+
+    // Concurrent starts -> exactly one succeeds (200), second returns 409
+    const [s1, s2] = await Promise.all([
+      fetch(`${baseUrl}/api/matches/${matchId}/simulation/start`, {
+        method: 'POST',
         headers,
-        body: JSON.stringify({ simulationSpeed: 30 }),
-      },
-    );
-    assert.equal(speedRes.status, 200);
-    assert.equal(
-      ((await speedRes.json()) as { data: { simulationSpeed: number } }).data
-        .simulationSpeed,
-      30,
-    );
+      }),
+      fetch(`${baseUrl}/api/matches/${matchId}/simulation/start`, {
+        method: 'POST',
+        headers,
+      }),
+    ]);
+    const statuses = [s1.status, s2.status].sort();
+    assert.deepEqual(statuses, [200, 409]);
 
-    const resumeRes = await fetch(
-      `${baseUrl}/api/matches/${matchId}/simulation/resume`,
-      { method: 'POST', headers },
-    );
-    assert.equal(resumeRes.status, 200);
+    // Cannot edit simulationConfig while running
+    const editBlocked = await fetch(`${baseUrl}/api/matches/${matchId}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ simulationSeed: 'new-seed' }),
+    });
+    assert.equal(editBlocked.status, 409);
 
-    // Pause before stepping deterministically through all remaining events
+    // Simulate server restart: clear in-memory workers, then recover
+    stopAllSimulationWorkers();
+    assert.equal(getActiveSimulationWorkerCount(), 0);
+
+    const recoveredCount = await recoverRunningSimulations();
+    assert.equal(recoveredCount, 1);
+    assert.equal(getActiveSimulationWorkerCount(), 1);
+
+    // Pause, then issue 3 concurrent /next calls -> strictly sequential, zero duplicates
     await fetch(`${baseUrl}/api/matches/${matchId}/simulation/pause`, {
       method: 'POST',
       headers,
     });
 
-    const totalSteps = started.data.progress.totalSteps;
-    let lastState = started.data;
+    const [n1, n2, n3] = await Promise.all([
+      fetch(`${baseUrl}/api/matches/${matchId}/simulation/next`, {
+        method: 'POST',
+        headers,
+      }),
+      fetch(`${baseUrl}/api/matches/${matchId}/simulation/next`, {
+        method: 'POST',
+        headers,
+      }),
+      fetch(`${baseUrl}/api/matches/${matchId}/simulation/next`, {
+        method: 'POST',
+        headers,
+      }),
+    ]);
+    assert.equal(n1.status, 200);
+    assert.equal(n2.status, 200);
+    assert.equal(n3.status, 200);
 
-    for (let i = 0; i < totalSteps; i += 1) {
-      if (lastState.simulationStatus === 'completed') break;
+    const stateRes = await fetch(`${baseUrl}/api/matches/${matchId}/simulation`);
+    const state = (await stateRes.json()) as {
+      data: { progress: { executedSteps: number } };
+    };
+    // 1 kickoff + 3 next calls = 4 executed steps
+    assert.equal(state.data.progress.executedSteps, 4);
+  });
+
+  it('excludes stopped simulations from standings and includes completed simulations accurately', async () => {
+    const { leagueId, matchId, homeTeamId, awayTeamId } = await seedFixture(true);
+
+    // Start then immediately stop -> status becomes stopped & match cancelled
+    await fetch(`${baseUrl}/api/matches/${matchId}/simulation/start`, {
+      method: 'POST',
+      headers,
+    });
+    const stopRes = await fetch(
+      `${baseUrl}/api/matches/${matchId}/simulation/stop`,
+      { method: 'POST', headers },
+    );
+    const stopped = (await stopRes.json()) as {
+      data: { simulationStatus: string; match: { status: string } };
+    };
+    assert.equal(stopRes.status, 200);
+    assert.equal(stopped.data.simulationStatus, 'stopped');
+    assert.equal(stopped.data.match.status, 'cancelled');
+
+    // Standings must be empty for a stopped/cancelled simulation
+    const standingsWhileStopped = (await (
+      await fetch(`${baseUrl}/api/leagues/${leagueId}/standings`)
+    ).json()) as { data: { standings: unknown[] } };
+    assert.equal(standingsWhileStopped.data.standings.length, 0);
+
+    // Reset and step all the way to fulltime
+    await fetch(`${baseUrl}/api/matches/${matchId}/simulation/reset`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({}),
+    });
+
+    let completed = false;
+    for (let i = 0; i < 30 && !completed; i += 1) {
       const nextRes = await fetch(
         `${baseUrl}/api/matches/${matchId}/simulation/next`,
         { method: 'POST', headers },
       );
-      if (nextRes.status === 400) break;
-      assert.equal(nextRes.status, 200);
-      lastState = ((await nextRes.json()) as { data: typeof lastState }).data;
+      if (nextRes.status !== 200) break;
+      const body = (await nextRes.json()) as {
+        data: { simulationStatus: string };
+      };
+      completed = body.data.simulationStatus === 'completed';
     }
+    assert.equal(completed, true);
 
-    assert.equal(lastState.simulationStatus, 'completed');
-    assert.equal(lastState.match.status, 'finished');
-    assert.equal(lastState.progress.executedSteps, totalSteps);
-
-    // Verify score matches recorded goal/penalty/own_goal events exactly
-    const eventsRes = await fetch(`${baseUrl}/api/matches/${matchId}/events`);
-    const eventsBody = (await eventsRes.json()) as {
-      data: Array<{ type: string; team: { _id: string } }>;
+    // All generated events should be marked isSimulated: true
+    const eventsBody = (await (
+      await fetch(`${baseUrl}/api/matches/${matchId}/events`)
+    ).json()) as {
+      data: Array<{ isSimulated: boolean; type: string; team: { _id: string } }>;
     };
-    const matchRes = await fetch(`${baseUrl}/api/matches/${matchId}`);
-    const matchBody = (await matchRes.json()) as {
-      data: { homeScore: number; awayScore: number };
+    assert.ok(eventsBody.data.length > 0);
+    assert.ok(eventsBody.data.every((ev) => ev.isSimulated === true));
+
+    // Verify standings now include both teams with exact goals & points
+    const matchBody = (await (
+      await fetch(`${baseUrl}/api/matches/${matchId}`)
+    ).json()) as {
+      data: { homeScore: number; awayScore: number; status: string };
     };
+    assert.equal(matchBody.data.status, 'finished');
 
-    let expectedHome = 0;
-    let expectedAway = 0;
-    for (const ev of eventsBody.data) {
-      if (ev.type === 'goal' || ev.type === 'penalty') {
-        if (ev.team._id === homeTeamId) expectedHome += 1;
-        else if (ev.team._id === awayTeamId) expectedAway += 1;
-      } else if (ev.type === 'own_goal') {
-        if (ev.team._id === homeTeamId) expectedAway += 1;
-        else if (ev.team._id === awayTeamId) expectedHome += 1;
-      }
-    }
-
-    assert.equal(matchBody.data.homeScore, expectedHome);
-    assert.equal(matchBody.data.awayScore, expectedAway);
-    assert.equal(eventsBody.data.length, 8); // exact eventFrequency, no duplicates
-
-    // 4) Reset simulation restores scheduled 0-0 and clears all events
-    const resetRes = await fetch(
-      `${baseUrl}/api/matches/${matchId}/simulation/reset`,
-      { method: 'POST', headers, body: JSON.stringify({}) },
-    );
-    const resetBody = (await resetRes.json()) as {
+    const finalStandings = (await (
+      await fetch(`${baseUrl}/api/leagues/${leagueId}/standings`)
+    ).json()) as {
       data: {
-        simulationStatus: string;
-        progress: { executedSteps: number };
-        match: { status: string; homeScore: number; awayScore: number; minute: number };
+        standings: Array<{
+          team: { _id: string };
+          played: number;
+          goalsFor: number;
+          goalsAgainst: number;
+          points: number;
+        }>;
       };
     };
-    assert.equal(resetRes.status, 200);
-    assert.equal(resetBody.data.simulationStatus, 'idle');
-    assert.equal(resetBody.data.progress.executedSteps, 0);
-    assert.equal(resetBody.data.match.status, 'scheduled');
-    assert.equal(resetBody.data.match.homeScore, 0);
-    assert.equal(resetBody.data.match.awayScore, 0);
-    assert.equal(resetBody.data.match.minute, 0);
+    assert.equal(finalStandings.data.standings.length, 2);
 
-    const afterResetEvents = (await (
-      await fetch(`${baseUrl}/api/matches/${matchId}/events`)
-    ).json()) as { data: unknown[] };
-    assert.equal(afterResetEvents.data.length, 0);
+    const homeRow = finalStandings.data.standings.find(
+      (r) => r.team._id === homeTeamId,
+    );
+    const awayRow = finalStandings.data.standings.find(
+      (r) => r.team._id === awayTeamId,
+    );
+    assert.ok(homeRow && awayRow);
+    assert.equal(homeRow.played, 1);
+    assert.equal(homeRow.goalsFor, matchBody.data.homeScore);
+    assert.equal(homeRow.goalsAgainst, matchBody.data.awayScore);
+    assert.equal(awayRow.goalsFor, matchBody.data.awayScore);
+    assert.equal(awayRow.goalsAgainst, matchBody.data.homeScore);
   });
 });

@@ -20,6 +20,7 @@ export const SIMULATION_STATUSES = [
   'running',
   'paused',
   'completed',
+  'stopped',
 ] as const;
 
 export type SimulationStatus = (typeof SIMULATION_STATUSES)[number];
@@ -40,6 +41,7 @@ export interface ISimulationConfig {
   goalProbability: number;
   cardProbability: number;
   substitutionProbability: number;
+  maxSubstitutionsPerTeam: number;
 }
 
 export interface ISimulationStep {
@@ -90,6 +92,7 @@ const simulationConfigSchema = new Schema<ISimulationConfig>(
     goalProbability: { type: Number, default: 0.22, min: 0, max: 1 },
     cardProbability: { type: Number, default: 0.38, min: 0, max: 1 },
     substitutionProbability: { type: Number, default: 0.32, min: 0, max: 1 },
+    maxSubstitutionsPerTeam: { type: Number, default: 5, min: 0, max: 7 },
   },
   { _id: false },
 );

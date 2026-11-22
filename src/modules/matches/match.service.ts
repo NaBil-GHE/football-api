@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import type { QueryFilter } from 'mongoose';
 import { AppError } from '../../utils/app-error';
 import {
@@ -90,7 +91,7 @@ export async function createMatch(input: CreateMatchInput): Promise<MatchDocumen
 
   const isSimulation = input.isSimulation ?? false;
   const simulationSeed = isSimulation
-    ? (input.simulationSeed ?? `sim-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+    ? (input.simulationSeed ?? `sim-${randomBytes(6).toString('hex')}`)
     : undefined;
   const simulationConfig = isSimulation
     ? normalizeSimulationConfig(input.simulationConfig)
@@ -290,9 +291,48 @@ export async function updateMatch(
     assertValidStatusTransition(existing.status, input.status);
   }
 
+  const isMutatingSimSettings =
+    input.isSimulation !== undefined ||
+    input.simulationSeed !== undefined ||
+    input.simulationConfig !== undefined;
+
+  if (
+    isMutatingSimSettings &&
+    existing.isSimulation &&
+    (existing.simulationStatus === 'running' ||
+      existing.simulationStatus === 'paused')
+  ) {
+    throw new AppError(
+      'Cannot modify simulation mode, seed, or configuration while a simulation is running or paused. Reset it first.',
+      409,
+      'SIMULATION_IN_PROGRESS',
+    );
+  }
+
+  const updatePayload: Record<string, unknown> = { ...input };
+
+  if (isMutatingSimSettings) {
+    const nextIsSimulation = input.isSimulation ?? existing.isSimulation;
+    if (nextIsSimulation) {
+      const nextSeed =
+        input.simulationSeed ??
+        existing.simulationSeed ??
+        `sim-${existing._id.toString()}`;
+      const nextConfig = normalizeSimulationConfig(
+        input.simulationConfig ?? existing.simulationConfig,
+      );
+      updatePayload.simulationSeed = nextSeed;
+      updatePayload.simulationConfig = nextConfig;
+      updatePayload.simulationSchedule = generateSimulationSchedule(
+        nextSeed,
+        nextConfig,
+      );
+    }
+  }
+
   const updated = await MatchModel.findByIdAndUpdate(
     id,
-    { $set: input },
+    { $set: updatePayload },
     { returnDocument: 'after', runValidators: true },
   ).populate(MATCH_POPULATE);
 

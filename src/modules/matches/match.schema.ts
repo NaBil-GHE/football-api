@@ -6,6 +6,16 @@ const isoDateSchema = z.coerce.date().refine((date) => !Number.isNaN(date.getTim
   message: 'Invalid ISO 8601 UTC date',
 });
 
+const simulationSeedSchema = z
+  .string()
+  .trim()
+  .min(1, 'Seed cannot be empty')
+  .max(120, 'Seed must be 120 characters or fewer')
+  .regex(
+    /^[a-zA-Z0-9._:-]+$/,
+    'Seed may only contain letters, numbers, dots, underscores, colons, and hyphens',
+  );
+
 export const simulationConfigSchema = z
   .object({
     matchDuration: z.coerce.number().int().min(10).max(120).default(90),
@@ -13,6 +23,7 @@ export const simulationConfigSchema = z
     goalProbability: z.coerce.number().min(0).max(1).default(0.22),
     cardProbability: z.coerce.number().min(0).max(1).default(0.38),
     substitutionProbability: z.coerce.number().min(0).max(1).default(0.32),
+    maxSubstitutionsPerTeam: z.coerce.number().int().min(0).max(7).default(5),
   })
   .refine(
     (cfg) =>
@@ -20,7 +31,15 @@ export const simulationConfigSchema = z
       1.0001,
     {
       message:
-        'Sum of goalProbability, cardProbability, and substitutionProbability cannot exceed 1',
+        'Sum of goalProbability, cardProbability, and substitutionProbability cannot exceed 1.0',
+      path: ['goalProbability'],
+    },
+  )
+  .refine(
+    (cfg) => cfg.eventFrequency <= cfg.matchDuration,
+    {
+      message: 'eventFrequency cannot exceed matchDuration',
+      path: ['eventFrequency'],
     },
   );
 
@@ -39,7 +58,7 @@ export const createMatchSchema = z
     round: z.string().trim().min(1).max(60).optional(),
     isSimulation: z.boolean().default(false),
     simulationSpeed: z.coerce.number().min(1).max(120).default(10),
-    simulationSeed: z.string().trim().min(1).max(120).optional(),
+    simulationSeed: simulationSeedSchema.optional(),
     simulationConfig: simulationConfigSchema.optional(),
   })
   .refine((data) => data.homeTeam !== data.awayTeam, {
@@ -62,7 +81,7 @@ export const updateMatchSchema = z
     round: z.string().trim().min(1).max(60).optional(),
     isSimulation: z.boolean().optional(),
     simulationSpeed: z.coerce.number().min(1).max(120).optional(),
-    simulationSeed: z.string().trim().min(1).max(120).optional(),
+    simulationSeed: simulationSeedSchema.optional(),
     simulationConfig: simulationConfigSchema.optional(),
   })
   .refine((data) => Object.keys(data).length > 0, {

@@ -2,13 +2,17 @@ import 'dotenv/config';
 import type { Server } from 'node:http';
 import app from './app';
 import { connectDatabase, disconnectDatabase } from './config/database';
-import { stopAllSimulationWorkers } from './modules/matches/match-simulation.service';
+import {
+  recoverRunningSimulations,
+  stopAllSimulationWorkers,
+} from './modules/matches/match-simulation.service';
 
 const PORT = Number(process.env.PORT) || 3000;
 
 async function startServer(): Promise<void> {
   try {
     await connectDatabase();
+    await recoverRunningSimulations();
 
     const server: Server = app.listen(PORT, () => {
       console.log(`[Server] Running on http://localhost:${PORT}`);

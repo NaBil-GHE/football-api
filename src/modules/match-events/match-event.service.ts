@@ -113,9 +113,15 @@ export async function recalculateMatchScore(
   return { homeScore, awayScore };
 }
 
+export interface CreateMatchEventMeta {
+  isSimulated?: boolean;
+  simulationStepId?: string;
+}
+
 export async function createMatchEvent(
   matchId: string,
   input: CreateMatchEventInput,
+  meta?: CreateMatchEventMeta,
 ): Promise<{
   event: MatchEventDocument;
   score: { homeScore: number; awayScore: number };
@@ -135,6 +141,24 @@ export async function createMatchEvent(
 
     assertTeamInMatch(match, input.team);
 
+    // Idempotency guard for simulated events: return existing event if step already persisted
+    if (meta?.simulationStepId) {
+      const existingQuery = MatchEventModel.findOne({
+        match: match._id,
+        simulationStepId: meta.simulationStepId,
+      }).populate('team', 'name shortName logo');
+      if (session) {
+        existingQuery.session(session);
+      }
+      const existing = await existingQuery.exec();
+      if (existing) {
+        return {
+          event: existing,
+          score: { homeScore: match.homeScore, awayScore: match.awayScore },
+        };
+      }
+    }
+
     const createdDocs = await MatchEventModel.create(
       [
         {
@@ -147,6 +171,10 @@ export async function createMatchEvent(
           playerIn: input.playerIn,
           playerOut: input.playerOut,
           description: input.description,
+          isSimulated: meta?.isSimulated ?? false,
+          ...(meta?.simulationStepId
+            ? { simulationStepId: meta.simulationStepId }
+            : {}),
         },
       ],
       session ? { session } : undefined,

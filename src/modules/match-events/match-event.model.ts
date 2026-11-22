@@ -24,6 +24,8 @@ export interface IMatchEvent {
   playerIn?: string | undefined;
   playerOut?: string | undefined;
   description?: string | undefined;
+  isSimulated: boolean;
+  simulationStepId?: string | undefined;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -80,6 +82,16 @@ const matchEventSchema = new Schema<MatchEventDocument>(
       trim: true,
       maxlength: 500,
     },
+    isSimulated: {
+      type: Boolean,
+      default: false,
+      required: true,
+    },
+    simulationStepId: {
+      type: String,
+      trim: true,
+      maxlength: 60,
+    },
   },
   {
     timestamps: true,
@@ -89,6 +101,13 @@ const matchEventSchema = new Schema<MatchEventDocument>(
 matchEventSchema.index({ match: 1, minute: 1, addedTime: 1, createdAt: 1 });
 matchEventSchema.index({ team: 1 });
 matchEventSchema.index({ match: 1, type: 1 });
+matchEventSchema.index(
+  { match: 1, simulationStepId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { simulationStepId: { $type: 'string' } },
+  },
+);
 
 export const MatchEventModel: Model<MatchEventDocument> =
   mongoose.models.MatchEvent ||

@@ -642,10 +642,14 @@ export const openApiSpec = {
     '/matches/{id}/simulation/stop': {
       post: {
         tags: ['Matches'],
-        summary: 'Stop simulation and complete match (Admin)',
+        summary: 'Stop simulation prematurely and cancel match (excluded from standings) (Admin)',
         security: [{ bearerAuth: [] }],
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
-        responses: { '200': { description: 'Simulation stopped' } },
+        responses: {
+          '200': { description: 'Simulation stopped and match cancelled' },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '409': { $ref: '#/components/responses/Conflict' },
+        },
       },
     },
     '/matches/{id}/simulation/reset': {
