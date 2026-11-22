@@ -9,6 +9,7 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "seed:admin": "tsx src/scripts/seed-admin.ts",
+    "seed:demo": "tsx src/scripts/seed-demo.ts",
     "test": "tsx --test --test-concurrency=2 tests/**/*.test.ts"
   },
   "keywords": [],
