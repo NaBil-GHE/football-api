@@ -5,7 +5,9 @@ import {
   parseSortParam,
   type PaginatedResult,
 } from '../../utils/pagination';
+import { runInTransaction } from '../../utils/transaction';
 import { assertValidObjectId, escapeRegex } from '../../utils/validation';
+import { MatchModel } from '../matches/match.model';
 import { LeagueModel, type LeagueDocument } from './league.model';
 import type {
   CreateLeagueInput,
@@ -135,12 +137,16 @@ export async function deleteLeague(id: string): Promise<LeagueDocument> {
     throw new AppError('League not found', 404, 'LEAGUE_NOT_FOUND');
   }
 
-  const seasonCount = await SeasonModel.countDocuments({ league: league._id });
-  if (seasonCount > 0) {
+  const [seasonCount, matchCount] = await Promise.all([
+    SeasonModel.countDocuments({ league: league._id }),
+    MatchModel.countDocuments({ league: league._id }),
+  ]);
+
+  if (seasonCount > 0 || matchCount > 0) {
     throw new AppError(
-      'Cannot delete league with existing seasons. Delete its seasons first.',
+      'Cannot delete league with existing seasons or matches.',
       409,
-      'LEAGUE_HAS_SEASONS',
+      'LEAGUE_IN_USE',
     );
   }
 
@@ -154,34 +160,54 @@ export async function createSeason(
 ): Promise<SeasonDocument> {
   assertValidObjectId(leagueId, 'league id');
 
-  const league = await LeagueModel.findById(leagueId);
-  if (!league) {
-    throw new AppError('League not found', 404, 'LEAGUE_NOT_FOUND');
-  }
+  return await runInTransaction(async (session) => {
+    const leagueQuery = LeagueModel.findById(leagueId);
+    if (session) leagueQuery.session(session);
+    const league = await leagueQuery.exec();
 
-  const existingSeason = await SeasonModel.findOne({
-    league: league._id,
-    name: input.name,
-  }).collation({ locale: 'en', strength: 2 });
+    if (!league) {
+      throw new AppError('League not found', 404, 'LEAGUE_NOT_FOUND');
+    }
 
-  if (existingSeason) {
-    throw new AppError(
-      `Season "${input.name}" already exists for this league`,
-      409,
-      'SEASON_ALREADY_EXISTS',
+    const existingQuery = SeasonModel.findOne({
+      league: league._id,
+      name: input.name,
+    }).collation({ locale: 'en', strength: 2 });
+    if (session) existingQuery.session(session);
+    const existingSeason = await existingQuery.exec();
+
+    if (existingSeason) {
+      throw new AppError(
+        `Season "${input.name}" already exists for this league`,
+        409,
+        'SEASON_ALREADY_EXISTS',
+      );
+    }
+
+    if (input.current) {
+      await SeasonModel.updateMany(
+        { league: league._id, current: true },
+        { $set: { current: false } },
+        session ? { session } : undefined,
+      );
+    }
+
+    const createdDocs = await SeasonModel.create(
+      [
+        {
+          league: league._id,
+          ...input,
+        },
+      ],
+      session ? { session } : undefined,
     );
-  }
 
-  if (input.current) {
-    await SeasonModel.updateMany(
-      { league: league._id, current: true },
-      { $set: { current: false } },
-    );
-  }
+    const created = createdDocs[0];
+    if (!created) {
+      throw new AppError('Failed to create season', 500, 'INTERNAL_SERVER_ERROR');
+    }
 
-  return await SeasonModel.create({
-    league: league._id,
-    ...input,
+    return created;
   });
 }
 
@@ -267,14 +293,24 @@ export async function deleteSeason(
   assertValidObjectId(leagueId, 'league id');
   assertValidObjectId(seasonId, 'season id');
 
-  const deleted = await SeasonModel.findOneAndDelete({
+  const season = await SeasonModel.findOne({
     _id: seasonId,
     league: leagueId,
   });
 
-  if (!deleted) {
+  if (!season) {
     throw new AppError('Season not found for this league', 404, 'SEASON_NOT_FOUND');
   }
 
-  return deleted;
+  const matchCount = await MatchModel.countDocuments({ season: season._id });
+  if (matchCount > 0) {
+    throw new AppError(
+      'Cannot delete season that has existing matches',
+      409,
+      'SEASON_HAS_MATCHES',
+    );
+  }
+
+  await season.deleteOne();
+  return season;
 }

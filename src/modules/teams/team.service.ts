@@ -6,6 +6,8 @@ import {
   type PaginatedResult,
 } from '../../utils/pagination';
 import { assertValidObjectId, escapeRegex } from '../../utils/validation';
+import { MatchModel } from '../matches/match.model';
+import { MatchEventModel } from '../match-events/match-event.model';
 import { TeamModel, type TeamDocument } from './team.model';
 import type {
   CreateTeamInput,
@@ -56,12 +58,12 @@ export async function listTeams(
   const skip = (query.page - 1) * query.limit;
 
   const [data, total] = await Promise.all([
-    TeamModel.find(filter).sort(sort).skip(skip).limit(query.limit).exec(),
+    TeamModel.find(filter).sort(sort).skip(skip).limit(query.limit).lean().exec(),
     TeamModel.countDocuments(filter),
   ]);
 
   return {
-    data,
+    data: data as unknown as TeamDocument[],
     pagination: buildPaginationMeta(total, query.page, query.limit),
   };
 }
@@ -123,10 +125,24 @@ export async function updateTeam(
 export async function deleteTeam(id: string): Promise<TeamDocument> {
   assertValidObjectId(id, 'team id');
 
-  const deleted = await TeamModel.findByIdAndDelete(id);
-  if (!deleted) {
+  const team = await TeamModel.findById(id);
+  if (!team) {
     throw new AppError('Team not found', 404, 'TEAM_NOT_FOUND');
   }
 
-  return deleted;
+  const [matchCount, eventCount] = await Promise.all([
+    MatchModel.countDocuments({ $or: [{ homeTeam: id }, { awayTeam: id }] }),
+    MatchEventModel.countDocuments({ team: id }),
+  ]);
+
+  if (matchCount > 0 || eventCount > 0) {
+    throw new AppError(
+      'Cannot delete team that is referenced by existing matches or events',
+      409,
+      'TEAM_IN_USE',
+    );
+  }
+
+  await team.deleteOne();
+  return team;
 }

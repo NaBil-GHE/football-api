@@ -5,9 +5,11 @@ import {
   parseSortParam,
   type PaginatedResult,
 } from '../../utils/pagination';
+import { runInTransaction } from '../../utils/transaction';
 import { assertValidObjectId } from '../../utils/validation';
 import { LeagueModel } from '../leagues/league.model';
 import { SeasonModel } from '../leagues/season.model';
+import { MatchEventModel } from '../match-events/match-event.model';
 import { TeamModel } from '../teams/team.model';
 import { assertValidStatusTransition } from './match-lifecycle.service';
 import { MatchModel, type MatchDocument } from './match.model';
@@ -278,10 +280,24 @@ export async function updateMatch(
 export async function deleteMatch(id: string): Promise<MatchDocument> {
   assertValidObjectId(id, 'match id');
 
-  const deleted = await MatchModel.findByIdAndDelete(id);
-  if (!deleted) {
-    throw new AppError('Match not found', 404, 'MATCH_NOT_FOUND');
-  }
+  return await runInTransaction(async (session) => {
+    const matchQuery = MatchModel.findById(id);
+    if (session) matchQuery.session(session);
+    const match = await matchQuery.exec();
 
-  return deleted;
+    if (!match) {
+      throw new AppError('Match not found', 404, 'MATCH_NOT_FOUND');
+    }
+
+    await MatchEventModel.deleteMany(
+      { match: match._id },
+      session ? { session } : undefined,
+    );
+    await MatchModel.deleteOne(
+      { _id: match._id },
+      session ? { session } : undefined,
+    );
+
+    return match;
+  });
 }

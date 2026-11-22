@@ -97,6 +97,7 @@ const matchSchema = new Schema<MatchDocument>(
 );
 
 matchSchema.index({ league: 1, season: 1, kickoff: 1 });
+matchSchema.index({ league: 1, season: 1, status: 1 });
 matchSchema.index({ status: 1, kickoff: 1 });
 matchSchema.index({ homeTeam: 1, kickoff: -1 });
 matchSchema.index({ awayTeam: 1, kickoff: -1 });
