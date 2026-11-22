@@ -586,6 +586,77 @@ export const openApiSpec = {
         responses: { '200': { description: 'Match score updated' } },
       },
     },
+    '/matches/{id}/simulation': {
+      get: {
+        tags: ['Matches'],
+        summary: 'Get persisted match simulation state and progress',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: 'Simulation state and progress' } },
+      },
+    },
+    '/matches/{id}/simulation/start': {
+      post: {
+        tags: ['Matches'],
+        summary: 'Start automated match simulation (Admin)',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: 'Simulation started' } },
+      },
+    },
+    '/matches/{id}/simulation/pause': {
+      post: {
+        tags: ['Matches'],
+        summary: 'Pause running match simulation (Admin)',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: 'Simulation paused' } },
+      },
+    },
+    '/matches/{id}/simulation/resume': {
+      post: {
+        tags: ['Matches'],
+        summary: 'Resume paused match simulation without duplicating events (Admin)',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: 'Simulation resumed' } },
+      },
+    },
+    '/matches/{id}/simulation/speed': {
+      patch: {
+        tags: ['Matches'],
+        summary: 'Change simulation speed multiplier 1–120 (Admin)',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: 'Simulation speed updated' } },
+      },
+    },
+    '/matches/{id}/simulation/next': {
+      post: {
+        tags: ['Matches'],
+        summary: 'Advance immediately to the next scheduled simulation event (Admin)',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: 'Next event executed' } },
+      },
+    },
+    '/matches/{id}/simulation/stop': {
+      post: {
+        tags: ['Matches'],
+        summary: 'Stop simulation and complete match (Admin)',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: 'Simulation stopped' } },
+      },
+    },
+    '/matches/{id}/simulation/reset': {
+      post: {
+        tags: ['Matches'],
+        summary: 'Reset simulation match to scheduled 0-0 and regenerate schedule (Admin)',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: 'Simulation reset' } },
+      },
+    },
     '/matches/{id}/events': {
       get: {
         tags: ['Match Events'],

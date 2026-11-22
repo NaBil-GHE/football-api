@@ -13,6 +13,11 @@ import { MatchEventModel } from '../match-events/match-event.model';
 import { TeamModel } from '../teams/team.model';
 import { assertValidStatusTransition } from './match-lifecycle.service';
 import { MatchModel, type MatchDocument } from './match.model';
+import {
+  generateSimulationSchedule,
+  normalizeSimulationConfig,
+} from './simulation-engine';
+import { stopSimulationWorker } from './match-simulation.service';
 import type {
   CreateMatchInput,
   ListMatchesQuery,
@@ -83,6 +88,18 @@ export async function createMatch(input: CreateMatchInput): Promise<MatchDocumen
     awayTeamId: input.awayTeam,
   });
 
+  const isSimulation = input.isSimulation ?? false;
+  const simulationSeed = isSimulation
+    ? (input.simulationSeed ?? `sim-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+    : undefined;
+  const simulationConfig = isSimulation
+    ? normalizeSimulationConfig(input.simulationConfig)
+    : undefined;
+  const simulationSchedule =
+    isSimulation && simulationSeed
+      ? generateSimulationSchedule(simulationSeed, simulationConfig)
+      : [];
+
   const created = await MatchModel.create({
     league: input.league,
     season: input.season,
@@ -95,6 +112,12 @@ export async function createMatch(input: CreateMatchInput): Promise<MatchDocumen
     awayScore: input.awayScore,
     minute: input.minute,
     round: input.round,
+    isSimulation,
+    simulationStatus: 'idle',
+    simulationSpeed: input.simulationSpeed ?? 10,
+    ...(simulationSeed ? { simulationSeed } : {}),
+    ...(simulationConfig ? { simulationConfig } : {}),
+    simulationSchedule,
   });
 
   const populated = await MatchModel.findById(created._id).populate(MATCH_POPULATE);
@@ -119,6 +142,9 @@ export async function listMatches(
   }
   if (query.round) {
     filter.round = query.round;
+  }
+  if (query.isSimulation !== undefined) {
+    filter.isSimulation = query.isSimulation;
   }
   if (query.team) {
     filter.$or = [{ homeTeam: query.team }, { awayTeam: query.team }];
@@ -279,6 +305,7 @@ export async function updateMatch(
 
 export async function deleteMatch(id: string): Promise<MatchDocument> {
   assertValidObjectId(id, 'match id');
+  stopSimulationWorker(id);
 
   return await runInTransaction(async (session) => {
     const matchQuery = MatchModel.findById(id);

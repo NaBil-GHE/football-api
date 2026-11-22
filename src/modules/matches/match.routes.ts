@@ -2,6 +2,16 @@ import { Router } from 'express';
 import { authenticate, requireAdmin } from '../../middleware/auth.middleware';
 import matchEventRouter from '../match-events/match-event.routes';
 import {
+  advanceSimulationController,
+  changeSimulationSpeedController,
+  getSimulationController,
+  pauseSimulationController,
+  resetSimulationController,
+  resumeSimulationController,
+  startSimulationController,
+  stopSimulationController,
+} from './match-simulation.controller';
+import {
   cancelMatchController,
   createMatchController,
   deleteMatchController,
@@ -79,6 +89,50 @@ matchRouter.patch(
   authenticate,
   requireAdmin,
   updateMatchScoreController,
+);
+
+matchRouter.get('/:id/simulation', getSimulationController);
+matchRouter.post(
+  '/:id/simulation/start',
+  authenticate,
+  requireAdmin,
+  startSimulationController,
+);
+matchRouter.post(
+  '/:id/simulation/pause',
+  authenticate,
+  requireAdmin,
+  pauseSimulationController,
+);
+matchRouter.post(
+  '/:id/simulation/resume',
+  authenticate,
+  requireAdmin,
+  resumeSimulationController,
+);
+matchRouter.patch(
+  '/:id/simulation/speed',
+  authenticate,
+  requireAdmin,
+  changeSimulationSpeedController,
+);
+matchRouter.post(
+  '/:id/simulation/next',
+  authenticate,
+  requireAdmin,
+  advanceSimulationController,
+);
+matchRouter.post(
+  '/:id/simulation/stop',
+  authenticate,
+  requireAdmin,
+  stopSimulationController,
+);
+matchRouter.post(
+  '/:id/simulation/reset',
+  authenticate,
+  requireAdmin,
+  resetSimulationController,
 );
 
 matchRouter.use('/:id/events', matchEventRouter);
