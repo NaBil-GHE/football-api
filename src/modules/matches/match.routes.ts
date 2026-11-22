@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import matchEventRouter from '../match-events/match-event.routes';
 import {
   createMatchController,
   deleteMatchController,
@@ -25,5 +26,7 @@ matchRouter.get('/', listMatchesController);
 matchRouter.get('/:id', getMatchByIdController);
 matchRouter.patch('/:id', updateMatchController);
 matchRouter.delete('/:id', deleteMatchController);
+
+matchRouter.use('/:id/events', matchEventRouter);
 
 export default matchRouter;
