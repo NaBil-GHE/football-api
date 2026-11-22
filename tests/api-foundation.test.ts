@@ -1,6 +1,4 @@
-import 'dotenv/config';
 import assert from 'node:assert/strict';
-import type { AddressInfo } from 'node:net';
 import { after, before, describe, it } from 'node:test';
 import express from 'express';
 import { z } from 'zod';
@@ -8,37 +6,26 @@ import app from '../src/app';
 import { connectDatabase, disconnectDatabase } from '../src/config/database';
 import { errorHandler } from '../src/middleware/error.middleware';
 import { notFoundHandler } from '../src/middleware/not-found.middleware';
-
-async function startTestServer(expressApp: express.Express) {
-  return await new Promise<{ baseUrl: string; close: () => Promise<void> }>(
-    (resolve) => {
-      const server = expressApp.listen(0, '127.0.0.1', () => {
-        const address = server.address() as AddressInfo;
-        resolve({
-          baseUrl: `http://127.0.0.1:${address.port}`,
-          close: () =>
-            new Promise<void>((res, rej) => {
-              server.close((err) => (err ? rej(err) : res()));
-            }),
-        });
-      });
-    },
-  );
-}
+import {
+  setupTestDb,
+  startTestServer,
+  teardownTestDb,
+} from './helpers/test-db';
 
 describe('Phase 2 — API Foundation', () => {
   let baseUrl = '';
   let closeServer: () => Promise<void>;
 
   before(async () => {
+    await setupTestDb();
     const started = await startTestServer(app);
     baseUrl = started.baseUrl;
     closeServer = started.close;
   });
 
   after(async () => {
-    await disconnectDatabase();
     await closeServer();
+    await teardownTestDb();
   });
 
   it('GET /api/health returns 503 degraded when MongoDB is disconnected', async () => {
@@ -129,7 +116,6 @@ describe('Phase 2 — API Foundation', () => {
     const originalNodeEnv = process.env.NODE_ENV;
 
     try {
-      // 1) Unexpected error in production mode
       process.env.NODE_ENV = 'production';
       const prodRes = await fetch(`${started.baseUrl}/boom`);
       const prodBody = (await prodRes.json()) as {
@@ -143,7 +129,6 @@ describe('Phase 2 — API Foundation', () => {
       assert.equal(prodBody.error.message, 'Internal server error');
       assert.equal(prodBody.error.stack, undefined);
 
-      // 2) Unexpected error in development mode includes stack
       process.env.NODE_ENV = 'development';
       const devRes = await fetch(`${started.baseUrl}/boom`);
       const devBody = (await devRes.json()) as {
@@ -156,7 +141,6 @@ describe('Phase 2 — API Foundation', () => {
       assert.equal(devBody.error.code, 'INTERNAL_SERVER_ERROR');
       assert.equal(typeof devBody.error.stack, 'string');
 
-      // 3) Zod validation error returns 400 with field details
       const valRes = await fetch(`${started.baseUrl}/validate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
